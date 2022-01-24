@@ -2,7 +2,7 @@ import Button, { LinkButton, SecondaryButton } from '@components/Button'
 import { getExplorerInspectorUrl } from '@components/explorer/tools'
 import Loading from '@components/Loading'
 import Modal from '@components/Modal'
-import { getInstructionDataFromBase64 } from '@models/serialisation'
+import { getInstructionDataFromBase64 } from '@solana/spl-governance'
 import { SimulatedTransactionResponse, Transaction } from '@solana/web3.js'
 import { notify } from '@utils/notifications'
 import { UiInstruction } from '@utils/uiTypes/proposalCreationTypes'
@@ -94,7 +94,7 @@ const DryRunInstructionBtn = ({
         disabled={isPending || !wallet?.connected}
         small
       >
-        {isPending ? <Loading></Loading> : 'Run simulation'}
+        {isPending ? <Loading></Loading> : 'Preview instruction'}
       </SecondaryButton>
 
       {result?.response && (

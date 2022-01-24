@@ -1,8 +1,9 @@
 import { Connection, PublicKey } from '@solana/web3.js'
-import { AccountMetaData } from '../../../models/accounts'
+import { AccountMetaData } from '@solana/spl-governance'
 import { tryGetMint, tryGetTokenAccount } from '../../../utils/tokens'
 import BN from 'bn.js'
 import { getMintDecimalAmountFromNatural } from '@tools/sdk/units'
+import tokenService from '@utils/services/token'
 
 export interface TokenMintMetadata {
   name: string
@@ -20,8 +21,13 @@ export const MINT_METADATA = {
 export function getMintMetadata(
   tokenMintPk: PublicKey | undefined
 ): TokenMintMetadata {
-  // TODO: Fetch token mint metadata from the chain
-  return tokenMintPk ? MINT_METADATA[tokenMintPk.toBase58()] : undefined
+  const tokenMintAddress = tokenMintPk ? tokenMintPk.toBase58() : ''
+  const tokenInfo = tokenMintAddress
+    ? tokenService.getTokenInfo(tokenMintAddress)
+    : null
+  return tokenInfo
+    ? { name: tokenInfo.symbol }
+    : MINT_METADATA[tokenMintAddress]
 }
 
 export const SPL_TOKEN_INSTRUCTIONS = {
@@ -100,6 +106,46 @@ export const SPL_TOKEN_INSTRUCTIONS = {
         //     BufferLayout.u8('instruction'),
         //     Layout.uint64('amount'),
         //   ]);
+        const rawAmount = new BN(data.slice(1), 'le')
+        const tokenAmount = tokenMint
+          ? getMintDecimalAmountFromNatural(tokenMint.account, rawAmount)
+          : rawAmount
+
+        return (
+          <>
+            {tokenMint ? (
+              <div>
+                <div>
+                  <span>Amount:</span>
+                  <span>{`${tokenAmount.toNumber().toLocaleString()} ${
+                    tokenMintDescriptor?.name ?? ''
+                  }`}</span>
+                </div>
+              </div>
+            ) : (
+              <div>{JSON.stringify(data)}</div>
+            )}
+          </>
+        )
+      },
+    },
+    8: {
+      name: 'Token: Burn',
+      accounts: [
+        { name: 'Token Account', important: true },
+        { name: 'Mint', important: true },
+        { name: 'Account Owner' },
+      ],
+      getDataUI: async (
+        connection: Connection,
+        data: Uint8Array,
+        accounts: AccountMetaData[]
+      ) => {
+        const mint = accounts[1].pubkey
+        const tokenMint = await tryGetMint(connection, mint)
+
+        const tokenMintDescriptor = getMintMetadata(mint)
+
         const rawAmount = new BN(data.slice(1), 'le')
         const tokenAmount = tokenMint
           ? getMintDecimalAmountFromNatural(tokenMint.account, rawAmount)

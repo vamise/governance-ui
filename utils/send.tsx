@@ -1,14 +1,15 @@
 import { notify } from './notifications'
 import {
-  Account,
   Commitment,
   Connection,
+  Keypair,
   RpcResponseAndContext,
   SimulatedTransactionResponse,
   Transaction,
   TransactionSignature,
 } from '@solana/web3.js'
 import Wallet from '@project-serum/sol-wallet-adapter'
+import { sleep } from '@project-serum/common'
 
 class TransactionError extends Error {
   public txid: string
@@ -16,10 +17,6 @@ class TransactionError extends Error {
     super(message)
     this.txid = txid!
   }
-}
-
-export async function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export function getUnixTs() {
@@ -39,7 +36,7 @@ export async function sendTransaction({
 }: {
   transaction: Transaction
   wallet: Wallet
-  signers?: Array<Account>
+  signers?: Array<Keypair>
   connection: Connection
   sendingMessage?: string
   successMessage?: string
@@ -69,7 +66,7 @@ export async function signTransaction({
 }: {
   transaction: Transaction
   wallet: Wallet
-  signers?: Array<Account>
+  signers?: Array<Keypair>
   connection: Connection
 }) {
   transaction.recentBlockhash = (
@@ -89,7 +86,7 @@ export async function signTransactions({
 }: {
   transactionsAndSigners: {
     transaction: Transaction
-    signers?: Array<Account>
+    signers?: Array<Keypair>
   }[]
   wallet: Wallet
   connection: Connection

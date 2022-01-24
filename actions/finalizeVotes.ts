@@ -1,31 +1,31 @@
-import { ParsedAccount } from '@models/core/accounts'
-import { RpcContext } from '@models/core/api'
+import { ProgramAccount } from '@solana/spl-governance'
+import { RpcContext } from '@solana/spl-governance'
 import {
-  Account,
+  Keypair,
   PublicKey,
   Transaction,
   TransactionInstruction,
 } from '@solana/web3.js'
 import { sendTransaction } from '@utils/send'
-import { Proposal } from '../models/accounts'
-import { withFinalizeVote } from '../models/withFinalizeVote'
+import { Proposal } from '@solana/spl-governance'
+import { withFinalizeVote } from '@solana/spl-governance'
 
 export const finalizeVote = async (
   { connection, wallet, programId }: RpcContext,
   realm: PublicKey,
-  proposal: ParsedAccount<Proposal>
+  proposal: ProgramAccount<Proposal>
 ) => {
-  const signers: Account[] = []
+  const signers: Keypair[] = []
   const instructions: TransactionInstruction[] = []
 
   withFinalizeVote(
     instructions,
     programId,
     realm,
-    proposal.info.governance,
+    proposal.account.governance,
     proposal.pubkey,
-    proposal.info.tokenOwnerRecord,
-    proposal.info.governingTokenMint
+    proposal.account.tokenOwnerRecord,
+    proposal.account.governingTokenMint
   )
 
   const transaction = new Transaction()

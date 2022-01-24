@@ -1,7 +1,5 @@
 import Link from 'next/link'
 import { ArrowLeftIcon } from '@heroicons/react/outline'
-
-import TokenBalanceCard from '@components/TokenBalanceCard'
 import useRealm from '@hooks/useRealm'
 
 import useQueryContext from '@hooks/useQueryContext'
@@ -11,10 +9,10 @@ import Select from '@components/inputs/Select'
 import React, { createContext, useEffect, useState } from 'react'
 import Button, { LinkButton, SecondaryButton } from '@components/Button'
 import SplTokenTransfer from './components/instructions/SplTokenTransfer'
-import { RpcContext } from '@models/core/api'
+import { RpcContext } from '@solana/spl-governance'
 import { createProposal } from 'actions/createProposal'
 import useWalletStore from 'stores/useWalletStore'
-import { getInstructionDataFromBase64 } from '@models/serialisation'
+import { getInstructionDataFromBase64 } from '@solana/spl-governance'
 import { PublicKey } from '@solana/web3.js'
 import { PlusCircleIcon, XCircleIcon } from '@heroicons/react/outline'
 import { notify } from 'utils/notifications'
@@ -28,15 +26,19 @@ import {
   InstructionsContext,
 } from '@utils/uiTypes/proposalCreationTypes'
 import useGovernanceAssets from '@hooks/useGovernanceAssets'
-import { ParsedAccount } from '@models/core/accounts'
-import { Governance, GovernanceAccountType } from '@models/accounts'
+import { ProgramAccount } from '@solana/spl-governance'
+import { Governance, GovernanceAccountType } from '@solana/spl-governance'
 import InstructionContentContainer from './components/InstructionContentContainer'
 import ProgramUpgrade from './components/instructions/ProgramUpgrade'
 import Empty from './components/instructions/Empty'
 import Mint from './components/instructions/Mint'
 import CustomBase64 from './components/instructions/CustomBase64'
 import { getTimestampFromDays } from '@tools/sdk/units'
+import MakeChangeMaxAccounts from './components/instructions/Mango/MakeChangeMaxAccounts'
 import VoteBySwitch from './components/VoteBySwitch'
+import TokenBalanceCardWrapper from '@components/TokenBalance/TokenBalanceCardWrapper'
+import { getProgramVersionForRealm } from '@models/registry/api'
+import { useVoteRegistry } from 'VoteStakeRegistry/hooks/useVoteRegistry'
 
 const schema = yup.object().shape({
   title: yup.string().required('Title is required'),
@@ -53,6 +55,7 @@ export const NewProposalContext = createContext<InstructionsContext>(
 
 const New = () => {
   const router = useRouter()
+  const { client } = useVoteRegistry()
   const { fmtUrlWithCluster } = useQueryContext()
   const {
     symbol,
@@ -82,7 +85,7 @@ const New = () => {
   const [
     governance,
     setGovernance,
-  ] = useState<ParsedAccount<Governance> | null>(null)
+  ] = useState<ProgramAccount<Governance> | null>(null)
   const [isLoadingSignedProposal, setIsLoadingSignedProposal] = useState(false)
   const [isLoadingDraft, setIsLoadingDraft] = useState(false)
   const isLoading = isLoadingSignedProposal || isLoadingDraft
@@ -92,7 +95,7 @@ const New = () => {
     if (!governance) {
       return true
     } else {
-      const governanceType = governance.info.accountType
+      const governanceType = governance.account.accountType
       const instructionsAvailiableAfterProgramGovernance = [Instructions.Base64]
       switch (governanceType) {
         case GovernanceAccountType.ProgramGovernance:
@@ -180,9 +183,9 @@ const New = () => {
       }
 
       const rpcContext = new RpcContext(
-        new PublicKey(realm.account.owner.toString()),
-        realmInfo?.programVersion,
-        wallet,
+        new PublicKey(realm.owner.toString()),
+        getProgramVersionForRealm(realmInfo!),
+        wallet!,
         connection.current,
         connection.endpoint
       )
@@ -193,7 +196,7 @@ const New = () => {
             : null,
           holdUpTime: x.customHoldUpTime
             ? getTimestampFromDays(x.customHoldUpTime)
-            : selectedGovernance?.info?.config.minInstructionHoldUpTime,
+            : selectedGovernance?.account?.config.minInstructionHoldUpTime,
           prerequisiteInstructions: x.prerequisiteInstructions || [],
         }
       })
@@ -202,20 +205,20 @@ const New = () => {
         // Fetch governance to get up to date proposalCount
         selectedGovernance = (await fetchRealmGovernance(
           governance.pubkey
-        )) as ParsedAccount<Governance>
+        )) as ProgramAccount<Governance>
 
         const ownTokenRecord = ownVoterWeight.getTokenRecordToCreateProposal(
-          governance.info.config
+          governance.account.config
         )
         const defaultProposalMint = !mint?.supply.isZero()
-          ? realm.info.communityMint
+          ? realm.account.communityMint
           : !councilMint?.supply.isZero()
-          ? realm.info.config.councilMint
+          ? realm.account.config.councilMint
           : undefined
 
         const proposalMint =
           canChooseWhoVote && voteByCouncil
-            ? realm.info.config.councilMint
+            ? realm.account.config.councilMint
             : defaultProposalMint
 
         if (!proposalMint) {
@@ -226,15 +229,16 @@ const New = () => {
 
         proposalAddress = await createProposal(
           rpcContext,
-          realm.pubkey,
+          realm,
           selectedGovernance.pubkey,
           ownTokenRecord.pubkey,
           form.title,
           form.description,
           proposalMint,
-          selectedGovernance?.info?.proposalCount,
+          selectedGovernance?.account?.proposalCount,
           instructionsData,
-          isDraft
+          isDraft,
+          client
         )
 
         const url = fmtUrlWithCluster(
@@ -284,6 +288,13 @@ const New = () => {
         return <CustomBase64 index={idx} governance={governance}></CustomBase64>
       case Instructions.None:
         return <Empty index={idx} governance={governance}></Empty>
+      case Instructions.MangoMakeChangeMaxAccounts:
+        return (
+          <MakeChangeMaxAccounts
+            index={idx}
+            governance={governance}
+          ></MakeChangeMaxAccounts>
+        )
       default:
         null
     }
@@ -436,7 +447,7 @@ const New = () => {
         </>
       </div>
       <div className="col-span-12 md:col-span-5 lg:col-span-4">
-        <TokenBalanceCard />
+        <TokenBalanceCardWrapper />
       </div>
     </div>
   )

@@ -3,19 +3,19 @@ import Button from '../Button'
 import Input from '../inputs/Input'
 import useWalletStore from '../../stores/useWalletStore'
 import useRealm from '../../hooks/useRealm'
-import { RpcContext } from '../../models/core/api'
-import {
-  ChatMessageBody,
-  ChatMessageBodyType,
-} from '../../models/chat/accounts'
+import { RpcContext } from '@solana/spl-governance'
+import { ChatMessageBody, ChatMessageBodyType } from '@solana/spl-governance'
 import { postChatMessage } from '../../actions/chat/postMessage'
 import Loading from '../Loading'
+import Tooltip from '@components/Tooltip'
+import { getProgramVersionForRealm } from '@models/registry/api'
+import { useVoteRegistry } from 'VoteStakeRegistry/hooks/useVoteRegistry'
 
 const DiscussionForm = () => {
   const [comment, setComment] = useState('')
   const connected = useWalletStore((s) => s.connected)
-  const { ownVoterWeight, realmInfo } = useRealm()
-
+  const { ownVoterWeight, realmInfo, realm } = useRealm()
+  const { client } = useVoteRegistry()
   const [submitting, setSubmitting] = useState(false)
 
   const wallet = useWalletStore((s) => s.current)
@@ -27,9 +27,9 @@ const DiscussionForm = () => {
     setSubmitting(true)
 
     const rpcContext = new RpcContext(
-      proposal!.account.owner,
-      realmInfo?.programVersion,
-      wallet,
+      proposal!.owner,
+      getProgramVersionForRealm(realmInfo!),
+      wallet!,
       connection.current,
       connection.endpoint
     )
@@ -42,9 +42,12 @@ const DiscussionForm = () => {
     try {
       await postChatMessage(
         rpcContext,
+        realm!,
         proposal!,
         ownVoterWeight.getTokenRecord(),
-        msg
+        msg,
+        undefined,
+        client
       )
 
       setComment('')
@@ -61,6 +64,14 @@ const DiscussionForm = () => {
   const postEnabled =
     proposal && connected && ownVoterWeight.hasAnyWeight() && comment
 
+  const tooltipContent = !connected
+    ? 'Connect your wallet to send a comment'
+    : !ownVoterWeight.hasAnyWeight()
+    ? 'You need to have deposited some tokens to submit your comment.'
+    : !comment
+    ? 'Write a comment to submit'
+    : ''
+
   return (
     <>
       <div className="flex flex-col md:flex-row md:items-center md:space-x-4 space-y-4 md:space-y-0">
@@ -70,13 +81,16 @@ const DiscussionForm = () => {
           onChange={(e) => setComment(e.target.value)}
           placeholder="Thoughts?..."
         />
-        <Button
-          className="flex-shrink-0"
-          onClick={() => submitComment()}
-          disabled={!postEnabled || !comment}
-        >
-          {submitting ? <Loading /> : <span>Send It</span>}
-        </Button>
+
+        <Tooltip contentClassName="flex-shrink-0" content={tooltipContent}>
+          <Button
+            className="flex-shrink-0"
+            onClick={() => submitComment()}
+            disabled={!postEnabled || !comment}
+          >
+            {submitting ? <Loading /> : <span>Send It</span>}
+          </Button>
+        </Tooltip>
       </div>
     </>
   )

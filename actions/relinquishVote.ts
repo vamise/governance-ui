@@ -1,24 +1,24 @@
 import {
-  Account,
+  Keypair,
   PublicKey,
   Transaction,
   TransactionInstruction,
 } from '@solana/web3.js'
 
-import { Proposal } from '../models/accounts'
-import { RpcContext } from '../models/core/api'
-import { ParsedAccount } from '../models/core/accounts'
+import { Proposal } from '@solana/spl-governance'
+import { RpcContext } from '@solana/spl-governance'
+import { ProgramAccount } from '@solana/spl-governance'
 import { sendTransaction } from '../utils/send'
-import { withRelinquishVote } from '@models/withRelinquishVote'
+import { withRelinquishVote } from '@solana/spl-governance'
 
 export const relinquishVote = async (
   { connection, wallet, programId, walletPubkey }: RpcContext,
-  proposal: ParsedAccount<Proposal>,
+  proposal: ProgramAccount<Proposal>,
   tokenOwnerRecord: PublicKey,
   voteRecord: PublicKey,
   instructions: TransactionInstruction[] = []
 ) => {
-  const signers: Account[] = []
+  const signers: Keypair[] = []
 
   const governanceAuthority = walletPubkey
   const beneficiary = walletPubkey
@@ -26,10 +26,10 @@ export const relinquishVote = async (
   withRelinquishVote(
     instructions,
     programId,
-    proposal.info.governance,
+    proposal.account.governance,
     proposal.pubkey,
     tokenOwnerRecord,
-    proposal.info.governingTokenMint,
+    proposal.account.governingTokenMint,
     voteRecord,
     governanceAuthority,
     beneficiary

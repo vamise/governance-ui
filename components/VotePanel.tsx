@@ -1,68 +1,41 @@
-import { withFinalizeVote } from '@models/withFinalizeVote'
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
+
+import { withFinalizeVote, YesNoVote } from '@solana/spl-governance'
 import { TransactionInstruction } from '@solana/web3.js'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { relinquishVote } from '../actions/relinquishVote'
 import { useHasVoteTimeExpired } from '../hooks/useHasVoteTimeExpired'
 import useRealm from '../hooks/useRealm'
-import { getSignatoryRecordAddress, ProposalState } from '../models/accounts'
-import { RpcContext } from '../models/core/api'
-import { GoverningTokenType } from '../models/enums'
+import { ProposalState } from '@solana/spl-governance'
+import { RpcContext } from '@solana/spl-governance'
+import { GoverningTokenType } from '@solana/spl-governance'
 
-import { Vote } from '../models/instructions'
 import useWalletStore from '../stores/useWalletStore'
 import Button from './Button'
-import CancelProposalModal from './CancelProposalModal'
-import FinalizeVotesModal from './FinalizeVotesModal'
-import SignOffProposalModal from './SignOffProposalModal'
 import VoteCommentModal from './VoteCommentModal'
+import { getProgramVersionForRealm } from '@models/registry/api'
 
 const VotePanel = () => {
   const [showVoteModal, setShowVoteModal] = useState(false)
-  const [vote, setVote] = useState(null)
+  const [vote, setVote] = useState<YesNoVote | null>(null)
   const {
     governance,
     proposal,
     voteRecordsByVoter,
     tokenType,
-    proposalOwner,
   } = useWalletStore((s) => s.selectedProposal)
-  const { ownTokenRecord, ownCouncilTokenRecord, realm, realmInfo } = useRealm()
+  const {
+    ownTokenRecord,
+    ownCouncilTokenRecord,
+    realm,
+    realmInfo,
+    ownVoterWeight,
+  } = useRealm()
   const wallet = useWalletStore((s) => s.current)
   const connection = useWalletStore((s) => s.connection)
   const connected = useWalletStore((s) => s.connected)
   const fetchRealm = useWalletStore((s) => s.actions.fetchRealm)
   const hasVoteTimeExpired = useHasVoteTimeExpired(governance, proposal!)
-  const signatories = useWalletStore((s) => s.selectedProposal.signatories)
-
-  const [showSignOffModal, setShowSignOffModal] = useState(false)
-  const [signatoryRecord, setSignatoryRecord] = useState<any>(undefined)
-  const [showFinalizeVoteModal, setShowFinalizeVoteModal] = useState(false)
-  const [showCancelModal, setShowCancelModal] = useState(false)
-
-  const canFinalizeVote =
-    hasVoteTimeExpired === true &&
-    connected &&
-    proposal?.info.state === ProposalState.Voting
-
-  const walletPk = wallet?.publicKey
-
-  useEffect(() => {
-    const setup = async () => {
-      if (proposal && realmInfo && walletPk) {
-        const signatoryRecordPk = await getSignatoryRecordAddress(
-          realmInfo.programId,
-          proposal.pubkey,
-          walletPk
-        )
-
-        if (signatoryRecordPk && signatories) {
-          setSignatoryRecord(signatories[signatoryRecordPk.toBase58()])
-        }
-      }
-    }
-
-    setup()
-  }, [proposal, realmInfo, walletPk])
 
   const ownVoteRecord =
     wallet?.publicKey && voteRecordsByVoter[wallet.publicKey.toBase58()]
@@ -74,53 +47,59 @@ const VotePanel = () => {
 
   const isVoteCast = ownVoteRecord !== undefined
   const isVoting =
-    proposal?.info.state === ProposalState.Voting && !hasVoteTimeExpired
+    proposal?.account.state === ProposalState.Voting && !hasVoteTimeExpired
 
   const isVoteEnabled =
     connected &&
     isVoting &&
     !isVoteCast &&
     voterTokenRecord &&
-    !voterTokenRecord.info.governingTokenDepositAmount.isZero()
+    ownVoterWeight.hasMinAmountToVote(
+      voterTokenRecord.account.governingTokenMint
+    )
 
   const isWithdrawEnabled =
     connected &&
     ownVoteRecord &&
-    !ownVoteRecord?.info.isRelinquished &&
+    !ownVoteRecord?.account.isRelinquished &&
     proposal &&
-    (proposal!.info.state === ProposalState.Voting ||
-      proposal!.info.state === ProposalState.Completed ||
-      proposal!.info.state === ProposalState.Cancelled ||
-      proposal!.info.state === ProposalState.Succeeded ||
-      proposal!.info.state === ProposalState.Executing ||
-      proposal!.info.state === ProposalState.Defeated)
+    (proposal!.account.state === ProposalState.Voting ||
+      proposal!.account.state === ProposalState.Completed ||
+      proposal!.account.state === ProposalState.Cancelled ||
+      proposal!.account.state === ProposalState.Succeeded ||
+      proposal!.account.state === ProposalState.Executing ||
+      proposal!.account.state === ProposalState.Defeated)
 
   const submitRelinquishVote = async () => {
     const rpcContext = new RpcContext(
-      proposal!.account.owner,
-      realmInfo?.programVersion,
-      wallet,
+      proposal!.owner,
+      getProgramVersionForRealm(realmInfo!),
+      wallet!,
       connection.current,
       connection.endpoint
     )
     try {
       const instructions: TransactionInstruction[] = []
 
-      if (proposal?.info.state === ProposalState.Voting && hasVoteTimeExpired) {
+      if (
+        proposal?.account.state === ProposalState.Voting &&
+        hasVoteTimeExpired
+      ) {
         await withFinalizeVote(
           instructions,
           realmInfo!.programId,
           realm!.pubkey,
-          proposal.info.governance,
+          proposal.account.governance,
           proposal.pubkey,
-          proposal.info.tokenOwnerRecord,
-          proposal.info.governingTokenMint
+          proposal.account.tokenOwnerRecord,
+          proposal.account.governingTokenMint
         )
       }
 
       await relinquishVote(
         rpcContext,
         proposal!,
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         voterTokenRecord!.pubkey,
         ownVoteRecord!.pubkey,
         instructions
@@ -132,7 +111,7 @@ const VotePanel = () => {
     await fetchRealm(realmInfo!.programId, realmInfo!.realmId)
   }
 
-  const handleShowVoteModal = (vote) => {
+  const handleShowVoteModal = (vote: YesNoVote) => {
     setVote(vote)
     setShowVoteModal(true)
   }
@@ -141,131 +120,100 @@ const VotePanel = () => {
     setShowVoteModal(false)
   }, [])
 
-  const actionLabel = !isVoteCast
-    ? 'Cast your vote'
-    : isVoting
-    ? 'Withdraw your vote'
-    : 'Release your tokens'
+  const actionLabel =
+    !isVoteCast || !connected
+      ? 'Cast your vote'
+      : isVoting
+      ? 'Withdraw your vote'
+      : 'Release your tokens'
 
-  const canSignOff =
-    signatoryRecord &&
-    (proposal?.info.state === ProposalState.Draft ||
-      proposal?.info.state === ProposalState.SigningOff)
+  const withdrawTooltipContent = !connected
+    ? 'You need to connect your wallet'
+    : !isWithdrawEnabled
+    ? !ownVoteRecord?.account.isRelinquished
+      ? 'Owner vote record is not relinquished'
+      : 'The proposal is not in a valid state to execute this action.'
+    : ''
 
-  const canCancelProposal =
-    proposal &&
-    governance &&
-    proposalOwner &&
-    wallet?.publicKey &&
-    proposal.info.canWalletCancel(
-      governance.info,
-      proposalOwner.info,
-      wallet.publicKey
-    )
+  const voteTooltipContent = !connected
+    ? 'You need to connect your wallet to be able to vote'
+    : !isVoting && isVoteCast
+    ? 'Proposal is not in a voting state anymore.'
+    : !voterTokenRecord ||
+      ownVoterWeight.hasMinAmountToVote(
+        voterTokenRecord.account.governingTokenMint
+      )
+    ? 'You don’t have governance power to vote in this realm'
+    : ''
 
+  const notVisibleStatesForNotConnectedWallet = [
+    ProposalState.Cancelled,
+    ProposalState.Succeeded,
+    ProposalState.Draft,
+    ProposalState.Completed,
+  ]
+
+  const isVisibleToWallet = !connected
+    ? !hasVoteTimeExpired &&
+      typeof notVisibleStatesForNotConnectedWallet.find(
+        (x) => x === proposal?.account.state
+      ) === 'undefined'
+    : !ownVoteRecord?.account.isRelinquished
+
+  const isPanelVisible = (isVoting || isVoteCast) && isVisibleToWallet
   return (
-    <div className="bg-bkg-2 p-4 md:p-6 rounded-lg space-y-6">
-      <h2 className="mb-4 text-center">{actionLabel}</h2>
-      <div
-        className={`${
-          isVoting && 'flex-col'
-        } flex justify-center items-center gap-5`}
-      >
-        {isVoteCast ? (
-          <Button
-            onClick={() => submitRelinquishVote()}
-            disabled={!isWithdrawEnabled}
-          >
-            {isVoting ? 'Withdraw' : 'Release Tokens'}
-          </Button>
-        ) : (
-          <>
-            {isVoting && (
-              <div className="border-b border-gray-600 flex gap-x-5 pb-6 w-full justify-center items-center">
-                <Button
-                  className="w-full"
-                  onClick={() => handleShowVoteModal(Vote.Yes)}
-                  disabled={!isVoteEnabled}
-                >
-                  Approve
-                </Button>
-                <Button
-                  className="w-full"
-                  onClick={() => handleShowVoteModal(Vote.No)}
-                  disabled={!isVoteEnabled}
-                >
-                  Deny
-                </Button>
-              </div>
+    <>
+      {isPanelVisible && (
+        <div className="bg-bkg-2 p-4 md:p-6 rounded-lg space-y-6">
+          <h2 className="mb-4 text-center">{actionLabel}</h2>
+
+          <div className="items-center justify-center flex w-full gap-5">
+            {isVoteCast && connected ? (
+              <Button
+                tooltipMessage={withdrawTooltipContent}
+                onClick={() => submitRelinquishVote()}
+                disabled={!isWithdrawEnabled}
+              >
+                {isVoting ? 'Withdraw' : 'Release Tokens'}
+              </Button>
+            ) : (
+              <>
+                {isVoting && (
+                  <div className="w-full flex justify-between items-center gap-5">
+                    <Button
+                      tooltipMessage={voteTooltipContent}
+                      className="w-1/2"
+                      onClick={() => handleShowVoteModal(YesNoVote.Yes)}
+                      disabled={!isVoteEnabled}
+                    >
+                      Approve
+                    </Button>
+
+                    <Button
+                      tooltipMessage={voteTooltipContent}
+                      className="w-1/2"
+                      onClick={() => handleShowVoteModal(YesNoVote.No)}
+                      disabled={!isVoteEnabled}
+                    >
+                      Deny
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
-          </>
-        )}
+          </div>
 
-        {canSignOff && (
-          <Button
-            className={isVoting ? 'w-1/2' : 'w-full'}
-            onClick={() => setShowSignOffModal(true)}
-            disabled={!connected || !canSignOff}
-          >
-            Sign Off
-          </Button>
-        )}
-
-        {canCancelProposal && (
-          <Button
-            className={isVoting ? 'w-1/2' : 'w-full'}
-            onClick={() => setShowCancelModal(true)}
-            disabled={!connected}
-          >
-            Cancel
-          </Button>
-        )}
-
-        {canFinalizeVote && (
-          <Button
-            className={isVoting ? 'w-full' : ''}
-            onClick={() => setShowFinalizeVoteModal(true)}
-            disabled={!connected || !canFinalizeVote}
-          >
-            Finalize
-          </Button>
-        )}
-      </div>
-
-      {showVoteModal ? (
-        <VoteCommentModal
-          isOpen={showVoteModal}
-          onClose={handleCloseShowVoteModal}
-          vote={vote!}
-          voterTokenRecord={voterTokenRecord!}
-        />
-      ) : null}
-
-      {showSignOffModal && (
-        <SignOffProposalModal
-          isOpen={showSignOffModal && canSignOff}
-          onClose={() => setShowSignOffModal(false)}
-          signatoryRecord={signatoryRecord}
-        />
+          {showVoteModal ? (
+            <VoteCommentModal
+              isOpen={showVoteModal}
+              onClose={handleCloseShowVoteModal}
+              vote={vote!}
+              voterTokenRecord={voterTokenRecord!}
+            />
+          ) : null}
+        </div>
       )}
-
-      {showFinalizeVoteModal && (
-        <FinalizeVotesModal
-          isOpen={showFinalizeVoteModal && canFinalizeVote}
-          onClose={() => setShowFinalizeVoteModal(false)}
-          proposal={proposal}
-          governance={governance}
-        />
-      )}
-
-      {showCancelModal && (
-        <CancelProposalModal
-          // @ts-ignore
-          isOpen={showCancelModal && canCancelProposal}
-          onClose={() => setShowCancelModal(false)}
-        />
-      )}
-    </div>
+    </>
   )
 }
 

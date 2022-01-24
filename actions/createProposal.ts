@@ -1,17 +1,27 @@
 import {
-  Account,
+  Keypair,
   PublicKey,
   Transaction,
   TransactionInstruction,
 } from '@solana/web3.js'
 
-import { withCreateProposal } from '../models/withCreateProposal'
-import { withAddSignatory } from '../models/withAddSignatory'
-import { RpcContext } from '../models/core/api'
-import { withInsertInstruction } from '@models/withInsertInstruction'
-import { InstructionData } from '@models/accounts'
+import {
+  getSignatoryRecordAddress,
+  ProgramAccount,
+  Realm,
+  VoteType,
+  withCreateProposal,
+} from '@solana/spl-governance'
+import { withAddSignatory } from '@solana/spl-governance'
+import { RpcContext } from '@solana/spl-governance'
+import { withInsertInstruction } from '@solana/spl-governance'
+import { InstructionData } from '@solana/spl-governance'
 import { sendTransaction } from 'utils/send'
-import { withSignOffProposal } from '@models/withSignOffProposal'
+import { withSignOffProposal } from '@solana/spl-governance'
+import { withUpdateVoterWeightRecord } from 'VoteStakeRegistry/sdk/withUpdateVoterWeightRecord'
+import { VsrClient } from '@blockworks-foundation/voter-stake-registry-client'
+import { sendTransactions, SequenceType } from '@utils/sendTransactions'
+import { chunks } from '@utils/helpers'
 
 interface InstructionDataWithHoldUpTime {
   data: InstructionData | null
@@ -20,8 +30,8 @@ interface InstructionDataWithHoldUpTime {
 }
 
 export const createProposal = async (
-  { connection, wallet, programId, walletPubkey }: RpcContext,
-  realm: PublicKey,
+  { connection, wallet, programId, programVersion, walletPubkey }: RpcContext,
+  realm: ProgramAccount<Realm>,
   governance: PublicKey,
   tokenOwnerRecord: PublicKey,
   name: string,
@@ -29,19 +39,36 @@ export const createProposal = async (
   governingTokenMint: PublicKey,
   proposalIndex: number,
   instructionsData: InstructionDataWithHoldUpTime[],
-  isDraft: boolean
+  isDraft: boolean,
+  client?: VsrClient
 ): Promise<PublicKey> => {
   const instructions: TransactionInstruction[] = []
-  const signers: Account[] = []
+  const signers: Keypair[] = []
+
   const governanceAuthority = walletPubkey
   const signatory = walletPubkey
   const payer = walletPubkey
   const notificationTitle = isDraft ? 'proposal draft' : 'proposal'
   const prerequisiteInstructions: TransactionInstruction[] = []
+
+  // V2 Approve/Deny configuration
+  const voteType = VoteType.SINGLE_CHOICE
+  const options = ['Approve']
+  const useDenyOption = true
+
+  //will run only if plugin is connected with realm
+  const voterWeight = await withUpdateVoterWeightRecord(
+    instructions,
+    wallet.publicKey!,
+    realm,
+    client
+  )
+
   const proposalAddress = await withCreateProposal(
     instructions,
     programId,
-    realm,
+    programVersion,
+    realm.pubkey!,
     governance,
     tokenOwnerRecord,
     name,
@@ -49,10 +76,14 @@ export const createProposal = async (
     governingTokenMint,
     governanceAuthority,
     proposalIndex,
-    payer
+    voteType,
+    options,
+    useDenyOption,
+    payer,
+    voterWeight
   )
 
-  const signatoryRecordAddress = await withAddSignatory(
+  await withAddSignatory(
     instructions,
     programId,
     proposalAddress,
@@ -62,6 +93,15 @@ export const createProposal = async (
     payer
   )
 
+  // TODO: Return signatoryRecordAddress from the SDK call
+  const signatoryRecordAddress = await getSignatoryRecordAddress(
+    programId,
+    proposalAddress,
+    signatory
+  )
+
+  const insertInstructions: TransactionInstruction[] = []
+
   for (const [index, instruction] of instructionsData
     .filter((x) => x.data)
     .entries()) {
@@ -70,8 +110,9 @@ export const createProposal = async (
         prerequisiteInstructions.push(...instruction.prerequisiteInstructions)
       }
       await withInsertInstruction(
-        instructions,
+        insertInstructions,
         programId,
+        programVersion,
         governance,
         proposalAddress,
         tokenOwnerRecord,
@@ -84,9 +125,11 @@ export const createProposal = async (
     }
   }
 
+  const insertInstructionCount = insertInstructions.length
+
   if (!isDraft) {
     withSignOffProposal(
-      instructions,
+      insertInstructions, // SingOff proposal needs to be executed after inserting instructions hence we add it to insertInstructions
       programId,
       proposalAddress,
       signatoryRecordAddress,
@@ -94,20 +137,42 @@ export const createProposal = async (
     )
   }
 
-  const transaction = new Transaction()
-  //we merge instructions with additionalInstructionTransaction
-  //additional transaction instructions can came from instruction as something we need to do before instruction run.
-  //e.g ATA creation
-  transaction.add(...prerequisiteInstructions, ...instructions)
+  // This is an arbitrary threshold and we assume that up to 2 instructions can be inserted as a single Tx
+  // This is conservative setting and we might need to revise it if we have more empirical examples or
+  // reliable way to determine Tx size
+  if (insertInstructionCount <= 2) {
+    const transaction = new Transaction()
+    // We merge instructions with prerequisiteInstructions
+    // Prerequisite  instructions can came from instructions as something we need to do before instruction can be executed
+    // For example we create ATAs if they don't exist as part of the proposal creation flow
+    transaction.add(
+      ...prerequisiteInstructions,
+      ...instructions,
+      ...insertInstructions
+    )
 
-  await sendTransaction({
-    transaction,
-    wallet,
-    connection,
-    signers,
-    sendingMessage: `creating ${notificationTitle}`,
-    successMessage: `${notificationTitle} created`,
-  })
+    await sendTransaction({
+      transaction,
+      wallet,
+      connection,
+      signers,
+      sendingMessage: `creating ${notificationTitle}`,
+      successMessage: `${notificationTitle} created`,
+    })
+  } else {
+    const insertChunks = chunks(insertInstructions, 2)
+    const signerChunks = Array(insertChunks.length).fill([])
+
+    console.log(`Creating proposal using ${insertChunks.length} chunks`)
+
+    await sendTransactions(
+      connection,
+      wallet,
+      [prerequisiteInstructions, instructions, ...insertChunks],
+      [[], [], ...signerChunks],
+      SequenceType.Sequential
+    )
+  }
 
   return proposalAddress
 }

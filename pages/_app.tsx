@@ -9,14 +9,23 @@ import useHydrateStore from '../hooks/useHydrateStore'
 import useRealm from '../hooks/useRealm'
 import { getResourcePathPart } from '../tools/core/resources'
 import useRouterHistory from '@hooks/useRouterHistory'
+import Footer from '@components/Footer'
+import { useEffect } from 'react'
+import useDepositStore from 'VoteStakeRegistry/stores/useDepositStore'
+import useWalletStore from 'stores/useWalletStore'
+import { useVoteRegistry } from 'VoteStakeRegistry/hooks/useVoteRegistry'
+import ErrorBoundary from '@components/ErrorBoundary'
 
 function App({ Component, pageProps }) {
   useHydrateStore()
   useWallet()
   useRouterHistory()
-  const { realm, realmInfo, symbol } = useRealm()
-
-  const realmName = realmInfo?.displayName ?? realm?.info?.name
+  const { getDeposits, resetDepositState } = useDepositStore()
+  const { realm, realmInfo, symbol, ownTokenRecord } = useRealm()
+  const wallet = useWalletStore((s) => s.current)
+  const connection = useWalletStore((s) => s.connection)
+  const { client } = useVoteRegistry()
+  const realmName = realmInfo?.displayName ?? realm?.account?.name
 
   const title = realmName ? `${realmName}` : 'Solana Governance'
   const description = `Discuss and vote on ${title} proposals.`
@@ -29,8 +38,32 @@ function App({ Component, pageProps }) {
     faviconSelector as string
   )}/favicon.ico?v=${Date.now()}`
 
+  useEffect(() => {
+    if (
+      realm?.account.config.useCommunityVoterWeightAddin &&
+      realm.pubkey &&
+      ownTokenRecord?.pubkey &&
+      wallet?.connected &&
+      client
+    ) {
+      getDeposits({
+        realmPk: realm!.pubkey,
+        communityMintPk: ownTokenRecord.account.governingTokenMint,
+        walletPk: wallet!.publicKey!,
+        client: client!,
+        connection: connection.current,
+      })
+    } else if (!wallet?.connected) {
+      resetDepositState()
+    }
+  }, [
+    realm?.pubkey.toBase58(),
+    ownTokenRecord?.pubkey.toBase58(),
+    wallet?.connected,
+    client,
+  ])
   return (
-    <>
+    <div className="relative">
       <Head>
         <title>{title}</title>
         <link rel="preconnect" href="https://fonts.gstatic.com" />
@@ -64,15 +97,17 @@ function App({ Component, pageProps }) {
           <meta name="twitter:site" content={realmInfo.twitter} />
         )}
       </Head>
-
-      <ThemeProvider defaultTheme="Mango">
-        <NavBar />
-        <Notifications />
-        <PageBodyContainer>
-          <Component {...pageProps} />
-        </PageBodyContainer>
-      </ThemeProvider>
-    </>
+      <ErrorBoundary>
+        <ThemeProvider defaultTheme="Mango">
+          <NavBar />
+          <Notifications />
+          <PageBodyContainer>
+            <Component {...pageProps} />
+          </PageBodyContainer>
+        </ThemeProvider>
+      </ErrorBoundary>
+      <Footer />
+    </div>
   )
 }
 

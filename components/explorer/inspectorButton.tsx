@@ -1,5 +1,5 @@
 import { dryRunInstruction } from '../../actions/dryRunInstruction'
-import { InstructionData } from '../../models/accounts'
+import { InstructionData } from '@solana/spl-governance'
 import useWalletStore from '../../stores/useWalletStore'
 import { getExplorerInspectorUrl } from './tools'
 import { SecondaryButton } from '../Button'
@@ -29,7 +29,11 @@ export default function InspectorButton({
   }
 
   return (
-    <SecondaryButton disabled={!connected} onClick={() => showInspector()}>
+    <SecondaryButton
+      small
+      disabled={!connected}
+      onClick={() => showInspector()}
+    >
       Inspect
     </SecondaryButton>
   )

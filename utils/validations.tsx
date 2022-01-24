@@ -20,7 +20,8 @@ const getValidateAccount = async (
   pubKey: PublicKey
 ) => {
   const account = await connection.getParsedAccountInfo(pubKey)
-  if (!account || !account.value) {
+  //TODO find way to validate account without sols
+  if (!account) {
     throw "Account doesn't exist or has no SOLs"
   }
   return account
@@ -100,7 +101,7 @@ export const validateDestinationAccAddress = async (
 }
 
 export const validateDestinationAccAddressWithMint = async (
-  connection,
+  connection: ConnectionContext,
   val: any,
   mintPubKey: PublicKey
 ) => {
@@ -120,7 +121,7 @@ export const validateDestinationAccAddressWithMint = async (
 }
 
 export const validateBuffer = async (
-  connection,
+  connection: ConnectionContext,
   val: string,
   governedAccount?: PublicKey
 ) => {
@@ -170,6 +171,10 @@ export const getTokenTransferSchema = ({ form, connection }) => {
         'amount',
         'Transfer amount must be less than the source account available amount',
         async function (val: number) {
+          const isNft = form.governedTokenAccount.isNft
+          if (isNft) {
+            return true
+          }
           if (val && !form.governedTokenAccount) {
             return this.createError({
               message: `Please select source account to validate the amount`,
@@ -235,5 +240,66 @@ export const getTokenTransferSchema = ({ form, connection }) => {
       .object()
       .nullable()
       .required('Source account is required'),
+  })
+}
+
+export const getMintSchema = ({ form, connection }) => {
+  return yup.object().shape({
+    amount: yup
+      .number()
+      .typeError('Amount is required')
+      .test('amount', 'Invalid amount', async function (val: number) {
+        if (val && !form.mintAccount) {
+          return this.createError({
+            message: `Please select mint to validate the amount`,
+          })
+        }
+        if (val && form.mintAccount && form.mintAccount?.mintInfo) {
+          const mintValue = getMintNaturalAmountFromDecimal(
+            val,
+            form.mintAccount?.mintInfo.decimals
+          )
+          return !!(
+            form.mintAccount.governance?.account.governedAccount && mintValue
+          )
+        }
+        return this.createError({
+          message: `Amount is required`,
+        })
+      }),
+    destinationAccount: yup
+      .string()
+      .test(
+        'accountTests',
+        'Account validation error',
+        async function (val: string) {
+          if (val) {
+            try {
+              if (form.mintAccount?.governance) {
+                await validateDestinationAccAddressWithMint(
+                  connection,
+                  val,
+                  form.mintAccount.governance.account.governedAccount
+                )
+              } else {
+                return this.createError({
+                  message: `Please select mint`,
+                })
+              }
+
+              return true
+            } catch (e) {
+              return this.createError({
+                message: `${e}`,
+              })
+            }
+          } else {
+            return this.createError({
+              message: `Destination account is required`,
+            })
+          }
+        }
+      ),
+    mintAccount: yup.object().nullable().required('Mint is required'),
   })
 }

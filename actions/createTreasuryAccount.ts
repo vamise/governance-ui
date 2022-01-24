@@ -1,30 +1,41 @@
 import {
-  Account,
+  Keypair,
   PublicKey,
   Transaction,
   TransactionInstruction,
 } from '@solana/web3.js'
 
-import { GovernanceConfig } from '../models/accounts'
+import { GovernanceConfig, ProgramAccount, Realm } from '@solana/spl-governance'
 
-import { withCreateTokenGovernance } from '../models/withCreateTokenGovernance'
-import { RpcContext } from '../models/core/api'
+import { withCreateTokenGovernance } from '@solana/spl-governance'
+import { RpcContext } from '@solana/spl-governance'
 import { sendTransaction } from '@utils/send'
 import { withCreateSplTokenAccount } from '@models/withCreateSplTokenAccount'
+import { withUpdateVoterWeightRecord } from 'VoteStakeRegistry/sdk/withUpdateVoterWeightRecord'
+import { VsrClient } from '@blockworks-foundation/voter-stake-registry-client'
 
 export const createTreasuryAccount = async (
   { connection, wallet, programId, walletPubkey }: RpcContext,
-  realm: PublicKey,
+  realm: ProgramAccount<Realm>,
   mint: PublicKey,
   config: GovernanceConfig,
-  tokenOwnerRecord: PublicKey
+  tokenOwnerRecord: PublicKey,
+  client?: VsrClient
 ): Promise<PublicKey> => {
   const instructions: TransactionInstruction[] = []
-  const signers: Account[] = []
+  const signers: Keypair[] = []
+
+  //will run only if plugin is connected with realm
+  const voterWeight = await withUpdateVoterWeightRecord(
+    instructions,
+    wallet.publicKey!,
+    realm,
+    client
+  )
 
   const tokenAccount = await withCreateSplTokenAccount(
     connection,
-    wallet,
+    wallet!,
     instructions,
     signers,
     mint
@@ -32,20 +43,19 @@ export const createTreasuryAccount = async (
 
   const governanceAuthority = walletPubkey
 
-  const governanceAddress = (
-    await withCreateTokenGovernance(
-      instructions,
-      programId,
-      realm,
-      tokenAccount.tokenAccountAddress,
-      config,
-      true,
-      walletPubkey,
-      tokenOwnerRecord,
-      walletPubkey,
-      governanceAuthority
-    )
-  ).governanceAddress
+  const governanceAddress = await withCreateTokenGovernance(
+    instructions,
+    programId,
+    realm.pubkey,
+    tokenAccount.tokenAccountAddress,
+    config,
+    true,
+    walletPubkey,
+    tokenOwnerRecord,
+    walletPubkey,
+    governanceAuthority,
+    voterWeight
+  )
 
   const transaction = new Transaction()
   transaction.add(...instructions)

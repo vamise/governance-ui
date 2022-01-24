@@ -1,32 +1,35 @@
 import Link from 'next/link'
 import ReactMarkdown from 'react-markdown/react-markdown.min'
 import { ArrowLeftIcon, ExternalLinkIcon } from '@heroicons/react/outline'
-import useProposal from '../../../../hooks/useProposal'
-import ProposalStateBadge from '../../../../components/ProposalStatusBadge'
-import TokenBalanceCard from '../../../../components/TokenBalanceCard'
-import { InstructionPanel } from '../../../../components/instructions/instructionPanel'
-import DiscussionPanel from '../../../../components/chat/DiscussionPanel'
-import VotePanel from '../../../../components/VotePanel'
-import ApprovalQuorum from '../../../../components/ApprovalQuorum'
-import useRealm from '../../../../hooks/useRealm'
-import useProposalVotes from '../../../../hooks/useProposalVotes'
-import VoteResultsBar from '../../../../components/VoteResultsBar'
-import ProposalTimeStatus from '../../../../components/ProposalTimeStatus'
-import { option } from '../../../../tools/core/option'
-import useQueryContext from '../../../../hooks/useQueryContext'
+import useProposal from 'hooks/useProposal'
+import ProposalStateBadge from 'components/ProposalStatusBadge'
+import { InstructionPanel } from 'components/instructions/instructionPanel'
+import DiscussionPanel from 'components/chat/DiscussionPanel'
+import VotePanel from 'components/VotePanel'
+import ApprovalQuorum from 'components/ApprovalQuorum'
+import useRealm from 'hooks/useRealm'
+import useProposalVotes from 'hooks/useProposalVotes'
+import VoteResultsBar from 'components/VoteResultsBar'
+import ProposalTimeStatus from 'components/ProposalTimeStatus'
+import { option } from 'tools/core/option'
+import useQueryContext from 'hooks/useQueryContext'
 import React from 'react'
+import ProposalActionsPanel from '@components/ProposalActions'
+import { getRealmExplorerHost } from 'tools/routing'
+import TokenBalanceCardWrapper from '@components/TokenBalance/TokenBalanceCardWrapper'
 
 const Proposal = () => {
   const { fmtUrlWithCluster } = useQueryContext()
-  const { symbol } = useRealm()
+  const { symbol, realmInfo } = useRealm()
   const { proposal, description } = useProposal()
+
   const {
     yesVoteProgress,
     yesVoteCount,
     noVoteCount,
     relativeNoVotes,
     relativeYesVotes,
-  } = useProposalVotes(proposal?.info)
+  } = useProposalVotes(proposal?.account)
 
   return (
     <div className="grid grid-cols-12 gap-4">
@@ -43,7 +46,9 @@ const Proposal = () => {
 
               <div className="flex items-center">
                 <a
-                  href={`https://solana-labs.github.io/oyster-gov/#/proposal/${proposal.pubkey.toBase58()}?programId=${proposal.account.owner.toBase58()}`}
+                  href={`https://${getRealmExplorerHost(
+                    realmInfo
+                  )}/#/proposal/${proposal.pubkey.toBase58()}?programId=${proposal.owner.toBase58()}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
@@ -55,14 +60,14 @@ const Proposal = () => {
 
             <div className="border-b border-fgd-4 py-4">
               <div className="flex items-center justify-between mb-1">
-                <h1 className="mr-2">{proposal?.info.name}</h1>
+                <h1 className="mr-2">{proposal?.account.name}</h1>
                 <ProposalStateBadge
                   proposalPk={proposal.pubkey}
-                  proposal={proposal.info}
+                  proposal={proposal.account}
                   open={true}
                 />
               </div>
-              <ProposalTimeStatus proposal={proposal?.info} />
+              <ProposalTimeStatus proposal={proposal?.account} />
             </div>
 
             {description && (
@@ -86,7 +91,7 @@ const Proposal = () => {
       </div>
 
       <div className="col-span-12 md:col-span-5 lg:col-span-4 space-y-4">
-        <TokenBalanceCard proposal={option(proposal?.info)} />
+        <TokenBalanceCardWrapper proposal={option(proposal?.account)} />
         <div className="bg-bkg-2 rounded-lg">
           <div className="p-4 md:p-6">
             <h3 className="mb-4">Results</h3>
@@ -123,7 +128,9 @@ const Proposal = () => {
             <ApprovalQuorum progress={yesVoteProgress} />
           </div>
         </div>
+
         <VotePanel />
+        <ProposalActionsPanel />
       </div>
     </div>
   )

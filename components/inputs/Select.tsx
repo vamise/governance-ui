@@ -13,6 +13,8 @@ const Select = ({
   disabled = false,
   label = '',
   componentLabel,
+  useDefaultStyle = true,
+  noMaxWidth = false,
 }: {
   value: any | undefined
   onChange: any | undefined
@@ -23,16 +25,24 @@ const Select = ({
   disabled?: boolean | undefined
   label?: string | undefined
   componentLabel?: any | undefined
+  useDefaultStyle?: boolean
+  noMaxWidth?: boolean
 }) => {
   return (
-    <div>
+    <div className="mt-6">
       {label && <StyledLabel>{label}</StyledLabel>}
       <div className={`relative ${className} ${error && 'pb-1'}`}>
         <Listbox value={value} onChange={onChange} disabled={disabled}>
           {({ open }) => (
             <>
               <Listbox.Button
-                className={inputClasses({ className, disabled, error })}
+                className={inputClasses({
+                  className,
+                  disabled,
+                  error,
+                  useDefaultStyle,
+                  noMaxWidth,
+                })}
               >
                 <div
                   className={`flex items-center justify-between text-fgd-1 text-left`}
@@ -56,7 +66,9 @@ const Select = ({
               {open ? (
                 <Listbox.Options
                   static
-                  className={`text-fgd-1 text-sm max-h-64 max-w-lg overflow-auto z-20 w-full p-1 absolute left-0 mt-1 bg-bkg-1 origin-top-left divide-y divide-bkg-3 shadow-lg outline-none rounded-md thin-scroll`}
+                  className={`text-fgd-1 text-sm max-h-64 ${
+                    !noMaxWidth && 'max-w-lg'
+                  } overflow-auto z-20 w-full p-1 absolute left-0 mt-1 bg-bkg-1 origin-top-left divide-y divide-bkg-3 shadow-lg outline-none rounded-md thin-scroll`}
                 >
                   {children}
                 </Listbox.Options>
@@ -64,8 +76,8 @@ const Select = ({
             </>
           )}
         </Listbox>
+        <ErrorField text={error}></ErrorField>
       </div>
-      <ErrorField text={error}></ErrorField>
     </div>
   )
 }

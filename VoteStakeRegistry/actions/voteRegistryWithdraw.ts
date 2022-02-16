@@ -12,24 +12,24 @@ import { sendTransaction } from '@utils/send'
 
 export const voteRegistryWithdraw = async ({
   rpcContext,
-  toPubKey,
   mintPk,
   realmPk,
   amount,
   tokenOwnerRecordPubKey,
   depositIndex,
-  amountAfterOperation,
+  closeDepositAfterOperation,
+  communityMintPk,
   client,
 }: {
   rpcContext: RpcContext
-  toPubKey: PublicKey
   mintPk: PublicKey
   realmPk: PublicKey
+  communityMintPk: PublicKey
   amount: BN
   tokenOwnerRecordPubKey: PublicKey
   depositIndex: number
   //if we want to close deposit after doing operation we need to fill this because we can close only deposits that have 0 tokens inside
-  amountAfterOperation?: BN
+  closeDepositAfterOperation?: boolean
   client?: VsrClient
 }) => {
   const signers: Keypair[] = []
@@ -38,13 +38,14 @@ export const voteRegistryWithdraw = async ({
   await withVoteRegistryWithdraw({
     instructions,
     walletPk: wallet!.publicKey!,
-    toPubKey,
     mintPk,
     realmPk,
     amount,
     tokenOwnerRecordPubKey,
     depositIndex,
-    amountAfterOperation,
+    closeDepositAfterOperation,
+    communityMintPk,
+    connection,
     client,
   })
 

@@ -20,109 +20,104 @@ import classNames from 'classnames'
 import { useEffect, useState } from 'react'
 import useWalletStore from 'stores/useWalletStore'
 import { voteRegistryLockDeposit } from 'VoteStakeRegistry/actions/voteRegistryLockDeposit'
-import { useVoteRegistry } from 'VoteStakeRegistry/hooks/useVoteRegistry'
-import { LockupType } from 'VoteStakeRegistry/sdk/accounts'
+import { DepositWithMintAccount } from 'VoteStakeRegistry/sdk/accounts'
 import {
   yearsToDays,
   yearsToSecs,
   daysToYear,
   daysToMonths,
+  getMinDurationInDays,
 } from 'VoteStakeRegistry/tools/dateTools'
 import useDepositStore from 'VoteStakeRegistry/stores/useDepositStore'
-interface Period {
-  value: number
-  display: string
-  multiplier: number
-}
-interface LockupKind {
-  value: LockupType
-  info: string
-  displayName: string
-}
-interface VestingPeriod {
-  value: number
-  display: string
-  info: string
-}
-const MONTHLY = 'monthly'
-const lockupTypes: LockupKind[] = [
-  {
-    value: 'cliff',
-    displayName: 'Cliff',
-    info:
-      'Tokens are locked for a set timeframe and are released in full at the end of the period. Vote weight increase declines linearly over the period.',
-  },
-  {
-    value: 'constant',
-    displayName: 'Constant',
-    info:
-      'Tokens are locked permanently for a timeframe. At any time a constant lockup can be converted to a cliff lockup with a timeframe greater than or equal to the constant lockup period. Vote weight increase stays constant until the lockup is converted to a cliff type lockup.',
-  },
-  {
-    value: MONTHLY,
-    displayName: 'Vested',
-    info:
-      'Tokens are locked for a given timeframe and released over time at a rate of (number of periods / locked amount) per release period. Tokens can be released weekly, monthly or yearly. Vote weight increase declines linearly over the period.',
-  },
-]
+import { voteRegistryStartUnlock } from 'VoteStakeRegistry/actions/voteRegistryStartUnlock'
+import {
+  LockupKind,
+  lockupTypes,
+  MONTHLY,
+  CONSTANT,
+  Period,
+  VestingPeriod,
+  vestingPeriods,
+} from 'VoteStakeRegistry/tools/types'
+import BigNumber from 'bignumber.js'
+import useVoteStakeRegistryClientStore from 'VoteStakeRegistry/stores/voteStakeRegistryClientStore'
+import { calcMintMultiplier } from 'VoteStakeRegistry/tools/deposits'
 
-const vestingPeriods: VestingPeriod[] = [
-  {
-    value: 30,
-    display: 'Monthly',
-    info: 'per month',
-  },
-]
 const YES = 'YES'
 const NO = 'NO'
 
-const LockTokensModal = ({ onClose, isOpen }) => {
-  const { getDeposits } = useDepositStore()
-  const {
-    ownTokenRecord,
-    mint,
-    realm,
-    realmTokenAccount,
-    realmInfo,
-    tokenRecords,
-  } = useRealm()
-  const {
-    client,
-    calcMintMultiplier,
-    communityMintRegistrar,
-  } = useVoteRegistry()
+const LockTokensModal = ({
+  onClose,
+  isOpen,
+  depositToUnlock,
+}: {
+  onClose: () => void
+  isOpen: boolean
+  depositToUnlock?: DepositWithMintAccount | null
+}) => {
+  const { getOwnedDeposits } = useDepositStore()
+  const { mint, realm, realmTokenAccount, realmInfo, tokenRecords } = useRealm()
+  const client = useVoteStakeRegistryClientStore((s) => s.state.client)
+  const communityMintRegistrar = useVoteStakeRegistryClientStore(
+    (s) => s.state.communityMintRegistrar
+  )
   const connection = useWalletStore((s) => s.connection.current)
   const endpoint = useWalletStore((s) => s.connection.endpoint)
   const wallet = useWalletStore((s) => s.current)
   const deposits = useDepositStore((s) => s.state.deposits)
+  const { fetchRealm, fetchWalletTokenAccounts } = useWalletStore(
+    (s) => s.actions
+  )
 
   const lockupPeriods: Period[] = [
     {
       value: yearsToDays(1),
       display: '1y',
-      multiplier: calcMintMultiplier(yearsToSecs(1), communityMintRegistrar),
+      multiplier: calcMintMultiplier(
+        yearsToSecs(1),
+        communityMintRegistrar,
+        realm
+      ),
     },
     {
       value: yearsToDays(2),
       display: '2y',
-      multiplier: calcMintMultiplier(yearsToSecs(2), communityMintRegistrar),
+      multiplier: calcMintMultiplier(
+        yearsToSecs(2),
+        communityMintRegistrar,
+        realm
+      ),
     },
     {
       value: yearsToDays(3),
       display: '3y',
-      multiplier: calcMintMultiplier(yearsToSecs(3), communityMintRegistrar),
+      multiplier: calcMintMultiplier(
+        yearsToSecs(3),
+        communityMintRegistrar,
+        realm
+      ),
     },
     {
       value: yearsToDays(4),
       display: '4y',
-      multiplier: calcMintMultiplier(yearsToSecs(4), communityMintRegistrar),
+      multiplier: calcMintMultiplier(
+        yearsToSecs(4),
+        communityMintRegistrar,
+        realm
+      ),
     },
     {
       value: yearsToDays(5),
       display: '5y',
-      multiplier: calcMintMultiplier(yearsToSecs(5), communityMintRegistrar),
+      multiplier: calcMintMultiplier(
+        yearsToSecs(5),
+        communityMintRegistrar,
+        realm
+      ),
     },
-  ]
+  ].filter((x) =>
+    depositToUnlock ? getMinDurationInDays(depositToUnlock) <= x.value : true
+  )
 
   const maxMultiplier = lockupPeriods
     .map((x) => x.multiplier)
@@ -150,6 +145,12 @@ const LockTokensModal = ({ onClose, isOpen }) => {
   const hasMoreTokensInWallet = !realmTokenAccount?.account.amount.isZero()
   const wantToLockMoreThenDeposited = lockMoreThenDeposited === 'YES'
   const currentPrecision = precision(mintMinAmount)
+  const maxAmountToUnlock = depositToUnlock
+    ? getMintDecimalAmount(
+        depositToUnlock.mint.account,
+        depositToUnlock?.amountInitiallyLockedNative
+      )
+    : 0
   const maxAmountToLock =
     depositRecord && mint
       ? wantToLockMoreThenDeposited
@@ -161,7 +162,8 @@ const LockTokensModal = ({ onClose, isOpen }) => {
           )
         : getMintDecimalAmount(mint, depositRecord?.amountDepositedNative)
       : 0
-  const maxAmountFtm =
+  const maxAmount = depositToUnlock ? maxAmountToUnlock : maxAmountToLock
+  const maxAmountToLockFmt =
     depositRecord && mint
       ? wantToLockMoreThenDeposited
         ? fmtMintAmount(
@@ -172,30 +174,42 @@ const LockTokensModal = ({ onClose, isOpen }) => {
           )
         : fmtMintAmount(mint, depositRecord?.amountDepositedNative)
       : 0
+  const maxAmountToUnlockFmt = depositToUnlock
+    ? fmtMintAmount(
+        depositToUnlock.mint.account,
+        depositToUnlock?.amountInitiallyLockedNative
+      )
+    : 0
+  const maxAmountFmt = depositToUnlock
+    ? maxAmountToUnlockFmt
+    : maxAmountToLockFmt
 
   const tokenName = mint
-    ? getMintMetadata(realm?.account.communityMint)?.name
+    ? getMintMetadata(realm?.account.communityMint)?.name || 'tokens'
     : ''
   const currentPercentOfMaxMultiplier =
     (100 * lockupPeriod.multiplier) / maxMultiplier
 
-  const handleSetVestingPeriod = (idx) => {
+  const handleSetVestingPeriod = (idx: number) => {
     setVestingPeriod(vestingPeriods[idx])
   }
-  const handleSetLockupPeriod = (idx) => {
+  const handleSetLockupPeriod = (idx: number) => {
     setLockupPeriod(lockupPeriods[idx])
   }
-  const handleSetLockupType = (idx) => {
+  const handleSetLockupType = (idx: number) => {
     setLockupType(lockupTypes[idx])
   }
   const handleNextStep = () => {
     setCurrentStep(currentStep + 1)
   }
+  const goToStep = (val: number) => {
+    setCurrentStep(val)
+  }
   const validateAmountOnBlur = () => {
     const val = parseFloat(
       Math.max(
         Number(mintMinAmount),
-        Math.min(Number(maxAmountToLock), Number(amount))
+        Math.min(Number(maxAmount), Number(amount))
       ).toFixed(currentPrecision)
     )
     setAmount(val)
@@ -223,6 +237,7 @@ const LockTokensModal = ({ onClose, isOpen }) => {
     await voteRegistryLockDeposit({
       rpcContext,
       mintPk: realm!.account.communityMint!,
+      communityMintPk: realm!.account.communityMint!,
       realmPk: realm!.pubkey!,
       programId: realm!.owner,
       amountFromVoteRegistryDeposit: amountFromDeposit,
@@ -230,20 +245,66 @@ const LockTokensModal = ({ onClose, isOpen }) => {
       lockUpPeriodInDays: lockupPeriod.value,
       lockupKind: lockupType.value,
       sourceDepositIdx: depositRecord!.index,
-      tempHolderPk: realmTokenAccount!.publicKey,
+      sourceTokenAccount: realmTokenAccount!.publicKey,
       tokenOwnerRecordPk:
         tokenRecords[wallet!.publicKey!.toBase58()]?.pubkey || null,
       client: client,
     })
-    if (ownTokenRecord) {
-      await getDeposits({
-        realmPk: realm!.pubkey,
-        communityMintPk: ownTokenRecord!.account.governingTokenMint,
-        walletPk: wallet!.publicKey!,
-        client: client!,
-        connection,
-      })
+    await getOwnedDeposits({
+      realmPk: realm!.pubkey,
+      communityMintPk: realm!.account.communityMint,
+      walletPk: wallet!.publicKey!,
+      client: client!,
+      connection,
+    })
+    fetchWalletTokenAccounts()
+    fetchRealm(realmInfo!.programId, realmInfo!.realmId)
+    onClose()
+  }
+
+  const handleSaveUnlock = async () => {
+    if (!depositToUnlock) {
+      throw 'No deposit to unlock selected'
     }
+    const rpcContext = new RpcContext(
+      realm!.owner,
+      getProgramVersionForRealm(realmInfo!),
+      wallet!,
+      connection,
+      endpoint
+    )
+    const totalAmountToUnlock = getMintNaturalAmountFromDecimalAsBN(
+      amount!,
+      depositToUnlock!.mint.account.decimals
+    )
+
+    const totalAmountInDeposit = depositToUnlock.currentlyLocked
+
+    const whatWillBeLeftInsideDeposit = totalAmountInDeposit.sub(
+      totalAmountToUnlock
+    )
+
+    await voteRegistryStartUnlock({
+      rpcContext,
+      mintPk: depositToUnlock!.mint.publicKey,
+      realmPk: realm!.pubkey!,
+      programId: realm!.owner,
+      transferAmount: totalAmountToUnlock,
+      amountAfterOperation: whatWillBeLeftInsideDeposit,
+      lockUpPeriodInDays: lockupPeriod.value,
+      sourceDepositIdx: depositToUnlock!.index,
+      communityMintPk: realm!.account.communityMint,
+      tokenOwnerRecordPk:
+        tokenRecords[wallet!.publicKey!.toBase58()]?.pubkey || null,
+      client: client,
+    })
+    await getOwnedDeposits({
+      realmPk: realm!.pubkey,
+      communityMintPk: realm!.account.communityMint,
+      walletPk: wallet!.publicKey!,
+      client: client!,
+      connection,
+    })
 
     onClose()
   }
@@ -313,9 +374,13 @@ const LockTokensModal = ({ onClose, isOpen }) => {
               </Tab.List>
             </Tab.Group>
             <div className={`${labelClasses} font-bold`}>
-              {lockupType.value} Lockup
+              {lockupType.displayName} Lockup
             </div>
-            <div className="text-xs">{lockupType.info}</div>
+            {lockupType.info.map((text, index) => (
+              <div key={index} className="text-xs mb-2">
+                {text}
+              </div>
+            ))}
           </>
         )
       case 1:
@@ -325,7 +390,14 @@ const LockTokensModal = ({ onClose, isOpen }) => {
       case 2:
         return (
           <div className="mb-6">
-            {hasMoreTokensInWallet && (
+            {lockupType.value == CONSTANT && (
+              <div className="text-xs mb-6">
+                To initiate the unlock process you need to convert all, or part
+                of your constant lockup to a cliff lockup with a duration
+                greater than or equal to the constant lockup duration.
+              </div>
+            )}
+            {hasMoreTokensInWallet && !depositToUnlock && (
               <DoYouWantToDepositMoreComponent></DoYouWantToDepositMoreComponent>
             )}
             <div className="mb-6">
@@ -333,13 +405,13 @@ const LockTokensModal = ({ onClose, isOpen }) => {
                 Amount to lock{' '}
                 <div
                   className="ml-auto underline cursor-pointer"
-                  onClick={() => setAmount(Number(maxAmountToLock))}
+                  onClick={() => setAmount(Number(maxAmount))}
                 >
-                  Max: {maxAmountFtm}
+                  Max: {maxAmountFmt}
                 </div>
               </div>
               <Input
-                max={maxAmountToLock}
+                max={maxAmount}
                 min={mintMinAmount}
                 value={amount}
                 type="number"
@@ -412,11 +484,23 @@ const LockTokensModal = ({ onClose, isOpen }) => {
       case 3:
         return (
           <div className="flex flex-col text-center mb-6">
-            <h2>
-              Lock {amount} for {daysToYear(lockupPeriod.value)} {tokenName}
-              {lockupPeriod.value > yearsToDays(1) ? 'years' : 'year'}?
-            </h2>
-            <div className="text-xs">Locking tokens can’t be undone.</div>
+            {depositToUnlock ? (
+              <h2>
+                This will convert {new BigNumber(amount!).toFormat()}{' '}
+                {tokenName} into a cliff type lockup that unlocks in{' '}
+                {daysToYear(lockupPeriod.value)} years.
+              </h2>
+            ) : (
+              <h2>
+                Lock {new BigNumber(amount!).toFormat()} {tokenName} for{' '}
+                {lockupType.value == CONSTANT && ' at least '}
+                {daysToYear(lockupPeriod.value)}{' '}
+                {lockupPeriod.value > yearsToDays(1) ? 'years' : 'year'}?
+              </h2>
+            )}
+            {!depositToUnlock && (
+              <div className="text-xs">Locking tokens can’t be undone.</div>
+            )}
           </div>
         )
       default:
@@ -442,19 +526,31 @@ const LockTokensModal = ({ onClose, isOpen }) => {
   useEffect(() => {
     setLockupPeriod(lockupPeriods[0])
   }, [communityMintRegistrar])
+  useEffect(() => {
+    if (depositToUnlock) {
+      goToStep(2)
+    }
+  }, [depositToUnlock])
   const isMainBtnVisible = !hasMoreTokensInWallet || currentStep !== 1
   const isTitleVisible = currentStep !== 3
   const getCurrentBtnForStep = () => {
     switch (currentStep) {
       case 2:
         return (
-          <Button className="mb-4" onClick={handleNextStep}>
-            Lock Tokens
+          <Button
+            className="mb-4"
+            onClick={handleNextStep}
+            disabled={!amount || !maxAmount}
+          >
+            {depositToUnlock ? 'Start unlock' : 'Lock Tokens'}
           </Button>
         )
       case 3:
         return (
-          <Button className="mb-4" onClick={handleSaveLock}>
+          <Button
+            className="mb-4"
+            onClick={depositToUnlock ? handleSaveUnlock : handleSaveLock}
+          >
             Confirm
           </Button>
         )
@@ -469,8 +565,8 @@ const LockTokensModal = ({ onClose, isOpen }) => {
   return (
     <Modal onClose={onClose} isOpen={isOpen}>
       <h2 className="mb-6 flex flex-row items-center">
-        {isTitleVisible && 'Lock Tokens'}
-        {currentStep === 2 && (
+        {isTitleVisible && (depositToUnlock ? 'Start unlock' : 'Lock Tokens')}
+        {currentStep === 2 && !depositToUnlock && (
           <div className="ml-auto">
             <Select
               className="text-xs w-24"

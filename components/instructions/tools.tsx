@@ -13,6 +13,9 @@ import { MANGO_INSTRUCTIONS } from './programs/mango'
 import { getProgramName, isGovernanceProgram } from './programs/names'
 import { RAYDIUM_INSTRUCTIONS } from './programs/raydium'
 import { SPL_TOKEN_INSTRUCTIONS } from './programs/splToken'
+import { SYSTEM_INSTRUCTIONS } from './programs/system'
+import { VOTE_STAKE_REGISTRY_INSTRUCTIONS } from './programs/voteStakeRegistry'
+import { MARINADE_INSTRUCTIONS } from './programs/marinade'
 /**
  * Default governance program id instance
  */
@@ -89,13 +92,22 @@ export const ACCOUNT_NAMES = {
 // TODO: Add this to on-chain metadata to Governance account
 export const HIDDEN_GOVERNANCES = new Map<string, string>([
   ['HfWc8M6Df5wtLg8xg5vti4QKAo9KG4nL5gKQ8B2sjfYC', ''],
+  ['A3Fb876sEiUmDWgrJ1fShASstw8b5wHB6XETzQa8VM7S', ''],
+  ['2j2oe8YXdYJyS7G8CeEW5KARijdjjZkuPy5MnN8gBQqQ', ''],
+  ['56yqzBEr9BqDGjYPJz9G8LVQrbXsQM2t2Yq3Gk8S56d1', ''],
+])
+
+// Blacklisted proposals which should not be displayed in the UI
+// TODO: Add this to on-chain metadata to Proposal account
+export const HIDDEN_PROPOSALS = new Map<string, string>([
+  ['E8XgiVpDJgDf4XgBKjZnMs3S1K7cmibtbDqjw5aNobCZ', ''],
 ])
 
 export const DEFAULT_NFT_TREASURY_MINT =
   'GNFTm5rz1Kzvq94G7DJkcrEUnCypeQYf7Ya8arPoHWvw'
 
 export const DEFAULT_NATIVE_SOL_MINT =
-  'GSoL95LSRcKYxwVkvAxbYLp47uBn1QtP6pDUZQxp3Mg4'
+  'GSoLvSToqaUmMyqP12GffzcirPAickrpZmVUFtek6x5u'
 
 export function getAccountName(accountPk: PublicKey) {
   return ACCOUNT_NAMES[accountPk.toBase58()] ?? getProgramName(accountPk)
@@ -104,6 +116,8 @@ export function getAccountName(accountPk: PublicKey) {
 export const CHAT_PROGRAM_ID = new PublicKey(
   '7fjWgipzcHFP3c5TMMWumFHNAL5Eme1gFqqRGnNPbbfG'
 )
+
+export const WSOL_MINT = 'So11111111111111111111111111111111111111112'
 
 export interface AccountDescriptor {
   name: string
@@ -132,6 +146,9 @@ export const INSTRUCTION_DESCRIPTORS = {
   ...BPF_UPGRADEABLE_LOADER_INSTRUCTIONS,
   ...MANGO_INSTRUCTIONS,
   ...RAYDIUM_INSTRUCTIONS,
+  ...MARINADE_INSTRUCTIONS,
+  ...SYSTEM_INSTRUCTIONS,
+  ...VOTE_STAKE_REGISTRY_INSTRUCTIONS,
 }
 
 export async function getInstructionDescriptor(
@@ -139,14 +156,12 @@ export async function getInstructionDescriptor(
   instruction: InstructionData
 ) {
   let descriptors: any
-
   if (isGovernanceProgram(instruction.programId)) {
     descriptors =
       GOVERNANCE_INSTRUCTIONS['GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw']
   } else {
     descriptors = INSTRUCTION_DESCRIPTORS[instruction.programId.toBase58()]
   }
-
   const descriptor = descriptors && descriptors[instruction.data[0]]
   const dataUI = (descriptor?.getDataUI &&
     (await descriptor?.getDataUI(
@@ -154,7 +169,6 @@ export async function getInstructionDescriptor(
       instruction.data,
       instruction.accounts
     ))) ?? <>{JSON.stringify(instruction.data)}</>
-
   return {
     name: descriptor?.name,
     accounts: descriptor?.accounts,

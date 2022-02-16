@@ -4,7 +4,12 @@ import {
   Transaction,
   TransactionInstruction,
 } from '@solana/web3.js'
-import { GovernanceType, ProgramAccount, Realm } from '@solana/spl-governance'
+import {
+  getGovernanceProgramVersion,
+  GovernanceType,
+  ProgramAccount,
+  Realm,
+} from '@solana/spl-governance'
 import { GovernanceConfig } from '@solana/spl-governance'
 import { withCreateProgramGovernance } from '@solana/spl-governance'
 import { RpcContext } from '@solana/spl-governance'
@@ -12,7 +17,7 @@ import { sendTransaction } from '@utils/send'
 import { withUpdateVoterWeightRecord } from 'VoteStakeRegistry/sdk/withUpdateVoterWeightRecord'
 import { VsrClient } from '@blockworks-foundation/voter-stake-registry-client'
 
-export const registerGovernance = async (
+export const registerProgramGovernance = async (
   { connection, wallet, programId, walletPubkey }: RpcContext,
   governanceType: GovernanceType,
   realm: ProgramAccount<Realm>,
@@ -27,6 +32,13 @@ export const registerGovernance = async (
   let governanceAddress
   const governanceAuthority = walletPubkey
 
+  // Explicitly request the version before making RPC calls to work around race conditions in resolving
+  // the version for RealmInfo
+  const programVersion = await getGovernanceProgramVersion(
+    connection,
+    programId
+  )
+
   //will run only if plugin is connected with realm
   const voterWeight = await withUpdateVoterWeightRecord(
     instructions,
@@ -35,11 +47,14 @@ export const registerGovernance = async (
     client
   )
 
+  console.log('VERSION', programVersion)
+
   switch (governanceType) {
     case GovernanceType.Program: {
       governanceAddress = await withCreateProgramGovernance(
         instructions,
         programId,
+        programVersion,
         realm.pubkey,
         governedAccount,
         config,

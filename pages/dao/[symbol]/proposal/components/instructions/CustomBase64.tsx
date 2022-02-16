@@ -67,7 +67,7 @@ const CustomBase64 = ({
       setGovernedAccounts(matchedGovernances)
     }
     prepGovernances()
-  }, [])
+  }, [JSON.stringify(governedTokenAccounts)])
   async function getInstruction(): Promise<UiInstruction> {
     const isValid = await validateInstruction({ schema, form, setFormErrors })
     let serializedInstruction = ''
@@ -132,7 +132,7 @@ const CustomBase64 = ({
     <>
       <GovernedAccountSelect
         label="Governance"
-        governedAccounts={governedAccounts}
+        governedAccounts={governedAccounts as GovernedMultiTypeAccount[]}
         onChange={(value) => {
           handleSetForm({ value, propertyName: 'governedAccount' })
         }}

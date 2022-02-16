@@ -11,11 +11,11 @@ export interface Voter {
 }
 
 export interface votingMint {
-  depositScaledFactor: BN
+  baselineVoteWeightScaledFactor: BN
   digitShift: number
   grantAuthority: PublicKey
   lockupSaturationSecs: BN
-  lockupScaledFactor: BN
+  maxExtraLockupVoteWeightScaledFactor: BN
   mint: PublicKey
 }
 
@@ -28,7 +28,7 @@ export interface Registrar {
   votingMints: votingMint[]
   //there are more fields but no use for them on ui yet
 }
-export interface LockupKind {
+interface LockupKind {
   none: object
   daily: object
   monthly: object
@@ -54,6 +54,7 @@ export interface DepositWithMintAccount extends Deposit {
   available: BN
   vestingRate: BN | null
   currentlyLocked: BN
+  nextVestingTimestamp: BN | null
 }
 
 export const unusedMintPk = '11111111111111111111111111111111'

@@ -6,6 +6,7 @@ import {
 } from '@solana/web3.js'
 
 import {
+  getGovernanceProgramVersion,
   getSignatoryRecordAddress,
   ProgramAccount,
   Realm,
@@ -14,7 +15,7 @@ import {
 } from '@solana/spl-governance'
 import { withAddSignatory } from '@solana/spl-governance'
 import { RpcContext } from '@solana/spl-governance'
-import { withInsertInstruction } from '@solana/spl-governance'
+import { withInsertTransaction } from '@solana/spl-governance'
 import { InstructionData } from '@solana/spl-governance'
 import { sendTransaction } from 'utils/send'
 import { withSignOffProposal } from '@solana/spl-governance'
@@ -23,14 +24,15 @@ import { VsrClient } from '@blockworks-foundation/voter-stake-registry-client'
 import { sendTransactions, SequenceType } from '@utils/sendTransactions'
 import { chunks } from '@utils/helpers'
 
-interface InstructionDataWithHoldUpTime {
+export interface InstructionDataWithHoldUpTime {
   data: InstructionData | null
   holdUpTime: number | undefined
   prerequisiteInstructions: TransactionInstruction[]
+  chunkSplitByDefault?: boolean
 }
 
 export const createProposal = async (
-  { connection, wallet, programId, programVersion, walletPubkey }: RpcContext,
+  { connection, wallet, programId, walletPubkey }: RpcContext,
   realm: ProgramAccount<Realm>,
   governance: PublicKey,
   tokenOwnerRecord: PublicKey,
@@ -44,12 +46,18 @@ export const createProposal = async (
 ): Promise<PublicKey> => {
   const instructions: TransactionInstruction[] = []
   const signers: Keypair[] = []
-
   const governanceAuthority = walletPubkey
   const signatory = walletPubkey
   const payer = walletPubkey
   const notificationTitle = isDraft ? 'proposal draft' : 'proposal'
   const prerequisiteInstructions: TransactionInstruction[] = []
+
+  // Explicitly request the version before making RPC calls to work around race conditions in resolving
+  // the version for RealmInfo
+  const programVersion = await getGovernanceProgramVersion(
+    connection,
+    programId
+  )
 
   // V2 Approve/Deny configuration
   const voteType = VoteType.SINGLE_CHOICE
@@ -86,6 +94,7 @@ export const createProposal = async (
   await withAddSignatory(
     instructions,
     programId,
+    programVersion,
     proposalAddress,
     tokenOwnerRecord,
     governanceAuthority,
@@ -101,6 +110,9 @@ export const createProposal = async (
   )
 
   const insertInstructions: TransactionInstruction[] = []
+  const splitToChunkByDefault = instructionsData.filter(
+    (x) => x.chunkSplitByDefault
+  ).length
 
   for (const [index, instruction] of instructionsData
     .filter((x) => x.data)
@@ -109,7 +121,7 @@ export const createProposal = async (
       if (instruction.prerequisiteInstructions) {
         prerequisiteInstructions.push(...instruction.prerequisiteInstructions)
       }
-      await withInsertInstruction(
+      await withInsertTransaction(
         insertInstructions,
         programId,
         programVersion,
@@ -118,8 +130,9 @@ export const createProposal = async (
         tokenOwnerRecord,
         governanceAuthority,
         index,
+        0,
         instruction.holdUpTime || 0,
-        instruction.data,
+        [instruction.data],
         payer
       )
     }
@@ -131,16 +144,20 @@ export const createProposal = async (
     withSignOffProposal(
       insertInstructions, // SingOff proposal needs to be executed after inserting instructions hence we add it to insertInstructions
       programId,
+      programVersion,
+      realm.pubkey,
+      governance,
       proposalAddress,
+      signatory,
       signatoryRecordAddress,
-      signatory
+      undefined
     )
   }
 
   // This is an arbitrary threshold and we assume that up to 2 instructions can be inserted as a single Tx
   // This is conservative setting and we might need to revise it if we have more empirical examples or
   // reliable way to determine Tx size
-  if (insertInstructionCount <= 2) {
+  if (insertInstructionCount <= 2 && !splitToChunkByDefault) {
     const transaction = new Transaction()
     // We merge instructions with prerequisiteInstructions
     // Prerequisite  instructions can came from instructions as something we need to do before instruction can be executed

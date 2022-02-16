@@ -29,7 +29,7 @@ import useGovernanceAssets from '@hooks/useGovernanceAssets'
 import { ProgramAccount } from '@solana/spl-governance'
 import { Governance, GovernanceAccountType } from '@solana/spl-governance'
 import InstructionContentContainer from './components/InstructionContentContainer'
-import ProgramUpgrade from './components/instructions/ProgramUpgrade'
+import ProgramUpgrade from './components/instructions/bpfUpgradeableLoader/ProgramUpgrade'
 import Empty from './components/instructions/Empty'
 import Mint from './components/instructions/Mint'
 import CustomBase64 from './components/instructions/CustomBase64'
@@ -38,7 +38,10 @@ import MakeChangeMaxAccounts from './components/instructions/Mango/MakeChangeMax
 import VoteBySwitch from './components/VoteBySwitch'
 import TokenBalanceCardWrapper from '@components/TokenBalance/TokenBalanceCardWrapper'
 import { getProgramVersionForRealm } from '@models/registry/api'
-import { useVoteRegistry } from 'VoteStakeRegistry/hooks/useVoteRegistry'
+import Grant from 'VoteStakeRegistry/components/instructions/Grant'
+import Clawback from 'VoteStakeRegistry/components/instructions/Clawback'
+import useVoteStakeRegistryClientStore from 'VoteStakeRegistry/stores/voteStakeRegistryClientStore'
+import MakeChangeReferralFeeParams from './components/instructions/Mango/MakeChangeReferralFeeParams'
 
 const schema = yup.object().shape({
   title: yup.string().required('Title is required'),
@@ -55,7 +58,7 @@ export const NewProposalContext = createContext<InstructionsContext>(
 
 const New = () => {
   const router = useRouter()
-  const { client } = useVoteRegistry()
+  const client = useVoteStakeRegistryClientStore((s) => s.state.client)
   const { fmtUrlWithCluster } = useQueryContext()
   const {
     symbol,
@@ -98,7 +101,8 @@ const New = () => {
       const governanceType = governance.account.accountType
       const instructionsAvailiableAfterProgramGovernance = [Instructions.Base64]
       switch (governanceType) {
-        case GovernanceAccountType.ProgramGovernance:
+        case GovernanceAccountType.ProgramGovernanceV1:
+        case GovernanceAccountType.ProgramGovernanceV2:
           return instructionsAvailiableAfterProgramGovernance.includes(
             instructionType
           )
@@ -198,6 +202,7 @@ const New = () => {
             ? getTimestampFromDays(x.customHoldUpTime)
             : selectedGovernance?.account?.config.minInstructionHoldUpTime,
           prerequisiteInstructions: x.prerequisiteInstructions || [],
+          chunkSplitByDefault: x.chunkSplitByDefault || false,
         }
       })
 
@@ -295,6 +300,17 @@ const New = () => {
             governance={governance}
           ></MakeChangeMaxAccounts>
         )
+      case Instructions.MangoChangeReferralFeeParams:
+        return (
+          <MakeChangeReferralFeeParams
+            index={idx}
+            governance={governance}
+          ></MakeChangeReferralFeeParams>
+        )
+      case Instructions.Grant:
+        return <Grant index={idx} governance={governance}></Grant>
+      case Instructions.Clawback:
+        return <Clawback index={idx} governance={governance}></Clawback>
       default:
         null
     }

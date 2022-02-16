@@ -71,6 +71,8 @@ const VotePanel = () => {
       proposal!.account.state === ProposalState.Defeated)
 
   const submitRelinquishVote = async () => {
+    const programId = realmInfo?.programId
+    const realmId = realmInfo?.realmId
     const rpcContext = new RpcContext(
       proposal!.owner,
       getProgramVersionForRealm(realmInfo!),
@@ -88,6 +90,7 @@ const VotePanel = () => {
         await withFinalizeVote(
           instructions,
           realmInfo!.programId,
+          getProgramVersionForRealm(realmInfo!),
           realm!.pubkey,
           proposal.account.governance,
           proposal.pubkey,
@@ -108,7 +111,7 @@ const VotePanel = () => {
       console.error("Can't relinquish vote", ex)
     }
 
-    await fetchRealm(realmInfo!.programId, realmInfo!.realmId)
+    await fetchRealm(programId, realmId)
   }
 
   const handleShowVoteModal = (vote: YesNoVote) => {
@@ -140,7 +143,7 @@ const VotePanel = () => {
     : !isVoting && isVoteCast
     ? 'Proposal is not in a voting state anymore.'
     : !voterTokenRecord ||
-      ownVoterWeight.hasMinAmountToVote(
+      !ownVoterWeight.hasMinAmountToVote(
         voterTokenRecord.account.governingTokenMint
       )
     ? 'You don’t have governance power to vote in this realm'

@@ -60,7 +60,7 @@ const Empty = ({
       setGovernedAccounts(matchedGovernances)
     }
     prepGovernances()
-  }, [])
+  }, [JSON.stringify(governedTokenAccounts)])
   async function getInstruction(): Promise<UiInstruction> {
     const isValid = await validateInstruction({ schema, form, setFormErrors })
     const obj: UiInstruction = {
@@ -87,7 +87,7 @@ const Empty = ({
     <>
       <GovernedAccountSelect
         label="Governance"
-        governedAccounts={governedAccounts}
+        governedAccounts={governedAccounts as GovernedMultiTypeAccount[]}
         onChange={(value) => {
           handleSetForm({ value, propertyName: 'governedAccount' })
         }}

@@ -3,12 +3,15 @@ import { ProgramAccount } from '@solana/spl-governance'
 import { RpcContext } from '@solana/spl-governance'
 import { MintInfo } from '@solana/spl-token'
 import { PublicKey, TransactionInstruction } from '@solana/web3.js'
+import { getNameOf } from '@tools/core/script'
 import {
   GovernedMintInfoAccount,
   GovernedMultiTypeAccount,
   GovernedProgramAccount,
   GovernedTokenAccount,
 } from '@utils/tokens'
+import { DepositWithMintAccount, Voter } from 'VoteStakeRegistry/sdk/accounts'
+import { LockupKind } from 'VoteStakeRegistry/tools/types'
 
 export interface UiInstruction {
   serializedInstruction: string
@@ -16,6 +19,7 @@ export interface UiInstruction {
   governance: ProgramAccount<Governance> | undefined
   customHoldUpTime?: number
   prerequisiteInstructions?: TransactionInstruction[]
+  chunkSplitByDefault?: boolean
 }
 export interface SplTokenTransferForm {
   destinationAccount: string
@@ -25,7 +29,32 @@ export interface SplTokenTransferForm {
   mintInfo: MintInfo | undefined
 }
 
+export interface GrantForm {
+  destinationAccount: string
+  amount: number | undefined
+  governedTokenAccount: GovernedTokenAccount | undefined
+  mintInfo: MintInfo | undefined
+  lockupKind: LockupKind
+  startDateUnixSeconds: number
+  periods: number
+  allowClawback: boolean
+}
+
+export interface ClawbackForm {
+  governedTokenAccount: GovernedTokenAccount | undefined
+  voter: Voter | null
+  deposit: DepositWithMintAccount | null
+}
+
 export interface SendTokenCompactViewForm extends SplTokenTransferForm {
+  description: string
+  title: string
+}
+
+export interface StakingViewForm {
+  destinationAccount: GovernedTokenAccount | undefined
+  amount: number | undefined
+  governedTokenAccount: GovernedTokenAccount | undefined
   description: string
   title: string
 }
@@ -41,7 +70,10 @@ export interface ProgramUpgradeForm {
   governedAccount: GovernedProgramAccount | undefined
   programId: string | undefined
   bufferAddress: string
+  bufferSpillAddress?: string | undefined
 }
+
+export const programUpgradeFormNameOf = getNameOf<ProgramUpgradeForm>()
 
 export interface MangoMakeChangeMaxAccountsForm {
   governedAccount: GovernedProgramAccount | undefined
@@ -49,7 +81,14 @@ export interface MangoMakeChangeMaxAccountsForm {
   mangoGroupKey: string | undefined
   maxMangoAccounts: number
 }
-
+export interface MangoMakeChangeReferralFeeParams {
+  governedAccount: GovernedProgramAccount | undefined
+  programId: string | undefined
+  mangoGroupKey: string | undefined
+  refSurchargeCentibps: number
+  refShareCentibps: number
+  refMngoRequired: number
+}
 export interface Base64InstructionForm {
   governedAccount: GovernedMultiTypeAccount | undefined
   base64: string
@@ -67,6 +106,9 @@ export enum Instructions {
   Base64,
   None,
   MangoMakeChangeMaxAccounts,
+  MangoChangeReferralFeeParams,
+  Grant,
+  Clawback,
 }
 
 export type createParams = [

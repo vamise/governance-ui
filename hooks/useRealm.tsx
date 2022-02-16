@@ -1,4 +1,3 @@
-import { getGovernanceProgramVersion } from '@solana/spl-governance'
 import { isPublicKey } from '@tools/core/pubkey'
 import { useRouter } from 'next/router'
 import { useMemo, useState } from 'react'
@@ -30,27 +29,25 @@ export default function useRealm() {
     proposalDescriptions,
     tokenRecords,
     councilTokenOwnerRecords,
+    programVersion,
   } = useWalletStore((s) => s.selectedRealm)
   const votingPower = useDepositStore((s) => s.state.votingPower)
   const [realmInfo, setRealmInfo] = useState<RealmInfo | undefined>(undefined)
-
   useMemo(async () => {
     let realmInfo = isPublicKey(symbol as string)
       ? realm
         ? createUnchartedRealmInfo(realm)
         : undefined
-      : await getCertifiedRealmInfo(symbol as string, connection)
+      : getCertifiedRealmInfo(symbol as string, connection)
 
-    if (realmInfo && !realmInfo?.programVersion) {
-      const programVersion = await getGovernanceProgramVersion(
-        connection.current,
-        realmInfo?.programId
-      )
+    if (realmInfo) {
       realmInfo = { ...realmInfo, programVersion: programVersion }
     }
-
-    setRealmInfo(realmInfo)
-  }, [symbol, realm])
+    // Do not set realm info until the programVersion  is resolved
+    if (programVersion) {
+      setRealmInfo(realmInfo)
+    }
+  }, [symbol, realm, programVersion])
 
   const realmTokenAccount = useMemo(
     () =>

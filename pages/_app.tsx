@@ -15,16 +15,19 @@ import useDepositStore from 'VoteStakeRegistry/stores/useDepositStore'
 import useWalletStore from 'stores/useWalletStore'
 import { useVoteRegistry } from 'VoteStakeRegistry/hooks/useVoteRegistry'
 import ErrorBoundary from '@components/ErrorBoundary'
+import { WalletIdentityProvider } from '@cardinal/namespaces-components'
+import useVoteStakeRegistryClientStore from 'VoteStakeRegistry/stores/voteStakeRegistryClientStore'
 
 function App({ Component, pageProps }) {
   useHydrateStore()
   useWallet()
   useRouterHistory()
-  const { getDeposits, resetDepositState } = useDepositStore()
+  useVoteRegistry()
+  const { getOwnedDeposits, resetDepositState } = useDepositStore()
   const { realm, realmInfo, symbol, ownTokenRecord } = useRealm()
   const wallet = useWalletStore((s) => s.current)
   const connection = useWalletStore((s) => s.connection)
-  const { client } = useVoteRegistry()
+  const client = useVoteStakeRegistryClientStore((s) => s.state.client)
   const realmName = realmInfo?.displayName ?? realm?.account?.name
 
   const title = realmName ? `${realmName}` : 'Solana Governance'
@@ -42,13 +45,12 @@ function App({ Component, pageProps }) {
     if (
       realm?.account.config.useCommunityVoterWeightAddin &&
       realm.pubkey &&
-      ownTokenRecord?.pubkey &&
       wallet?.connected &&
       client
     ) {
-      getDeposits({
+      getOwnedDeposits({
         realmPk: realm!.pubkey,
-        communityMintPk: ownTokenRecord.account.governingTokenMint,
+        communityMintPk: realm!.account.communityMint,
         walletPk: wallet!.publicKey!,
         client: client!,
         connection: connection.current,
@@ -99,11 +101,13 @@ function App({ Component, pageProps }) {
       </Head>
       <ErrorBoundary>
         <ThemeProvider defaultTheme="Mango">
-          <NavBar />
-          <Notifications />
-          <PageBodyContainer>
-            <Component {...pageProps} />
-          </PageBodyContainer>
+          <WalletIdentityProvider appName={'Realms'}>
+            <NavBar />
+            <Notifications />
+            <PageBodyContainer>
+              <Component {...pageProps} />
+            </PageBodyContainer>
+          </WalletIdentityProvider>
         </ThemeProvider>
       </ErrorBoundary>
       <Footer />

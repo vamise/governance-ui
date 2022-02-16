@@ -7,7 +7,7 @@ import { PublicKey } from '@solana/web3.js'
 import {
   //   getMintDecimalAmountFromNatural,
   getMintMinAmountAsDecimal,
-  getMintNaturalAmountFromDecimal,
+  getMintNaturalAmountFromDecimalAsBN,
 } from '@tools/sdk/units'
 import { tryParseKey } from '@tools/validators/pubkey'
 import { debounce } from '@utils/debounce'
@@ -20,7 +20,7 @@ import {
 import React, { useEffect, useState } from 'react'
 import useTreasuryAccountStore from 'stores/useTreasuryAccountStore'
 import useWalletStore from 'stores/useWalletStore'
-import { BN } from '@project-serum/anchor'
+
 import { getTokenTransferSchema } from '@utils/validations'
 import {
   ArrowCircleDownIcon,
@@ -43,6 +43,7 @@ import AccountLabel from './AccountHeader'
 import Tooltip from '@components/Tooltip'
 import useGovernanceAssets from '@hooks/useGovernanceAssets'
 import {
+  getSolTransferInstruction,
   getTransferInstruction,
   getTransferNftInstruction,
 } from '@utils/instructionTools'
@@ -50,7 +51,7 @@ import VoteBySwitch from 'pages/dao/[symbol]/proposal/components/VoteBySwitch'
 import NFTSelector from '@components/NFTS/NFTSelector'
 import { NFTWithMint } from '@utils/uiTypes/nfts'
 import { getProgramVersionForRealm } from '@models/registry/api'
-import { useVoteRegistry } from 'VoteStakeRegistry/hooks/useVoteRegistry'
+import useVoteStakeRegistryClientStore from 'VoteStakeRegistry/stores/voteStakeRegistryClientStore'
 
 const SendTokens = () => {
   const { resetCompactViewState } = useTreasuryAccountStore()
@@ -67,10 +68,11 @@ const SendTokens = () => {
     councilMint,
     canChooseWhoVote,
   } = useRealm()
-  const { client } = useVoteRegistry()
+  const client = useVoteStakeRegistryClientStore((s) => s.state.client)
   const { canUseTransferInstruction } = useGovernanceAssets()
   const tokenInfo = useTreasuryAccountStore((s) => s.compact.tokenInfo)
   const isNFT = currentAccount?.isNft
+  const isSol = currentAccount?.isSol
   const { fmtUrlWithCluster } = useQueryContext()
   const wallet = useWalletStore((s) => s.current)
   const router = useRouter()
@@ -160,12 +162,16 @@ const SendTokens = () => {
       currentAccount,
       setFormErrors,
     }
-    return isNFT
-      ? getTransferNftInstruction({
-          ...defaultProps,
-          nftMint: selectedNftMint,
-        })
-      : getTransferInstruction(defaultProps)
+    if (isNFT) {
+      return getTransferNftInstruction({
+        ...defaultProps,
+        nftMint: selectedNftMint,
+      })
+    }
+    if (isSol) {
+      return getSolTransferInstruction(defaultProps)
+    }
+    return getTransferInstruction(defaultProps)
   }
   const handlePropose = async () => {
     setIsLoading(true)
@@ -244,15 +250,13 @@ const SendTokens = () => {
     setIsLoading(false)
   }
   const IsAmountNotHigherThenBalance = () => {
-    const mintValue = getMintNaturalAmountFromDecimal(
+    const mintValue = getMintNaturalAmountFromDecimalAsBN(
       form.amount!,
       form.governedTokenAccount!.mint!.account.decimals
     )
     let gte: boolean | undefined = false
     try {
-      gte = form.governedTokenAccount?.token?.account?.amount?.gte(
-        new BN(mintValue)
-      )
+      gte = form.governedTokenAccount?.token?.account?.amount?.gte(mintValue)
     } catch (e) {
       //silent fail
     }
